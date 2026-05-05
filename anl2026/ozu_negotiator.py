@@ -1,5 +1,5 @@
 """
-OzuNegotiator v6 — ANL 2026
+OzuNegotiator — ANL 2026
 =============================
 
 Two ideas implemented:
@@ -22,10 +22,6 @@ Two ideas implemented:
                           built from phases 1 and 2). Every offer must
                           maximize Advantage.
 
-   Why: v1's random.choice in Phase 3 could pick a low-floor outcome that
-   the opponent accepts cheaply. V6 stays at max bid — any accepted deal
-   is on our best possible terms.
-
 All else identical to v1: single decoy trick, basic frequency opponent model,
 AC_Const + AC_Aspiration + AC_Time(0.97).
 """
@@ -37,9 +33,9 @@ from negmas.outcomes import Outcome
 from negmas.preferences import LambdaMultiFun
 
 
-class OzuNegotiatorV6(SAOCallNegotiator):
+class OzuNegotiator(SAOCallNegotiator):
     """
-    ANL 2026 deceptive negotiation agent — v6.
+    ANL 2026 deceptive negotiation agent.
 
     Score = Advantage + Concealing
       Advantage  = utility(agreement) - reserved_value
@@ -89,11 +85,15 @@ class OzuNegotiatorV6(SAOCallNegotiator):
             vals = [o[self._decoy_issue] for o in self.rational_outcomes]
             self._decoy_val = Counter(vals).most_common(1)[0][0]
 
-        self._phase3_idx = 0
         self._last_bid: Outcome | None = None
         self._made_middle_offer = False
 
         self.private_info["opponent_ufun"] = LambdaMultiFun(f=lambda _: 0.5)
+
+    @property
+    def opponent_ufun(self):
+        """Read the estimated opponent utility function from private_info."""
+        return self.private_info.get("opponent_ufun", None)
 
     def _compute_issue_importance(self) -> list[float]:
         if not self.rational_outcomes:
@@ -223,21 +223,26 @@ class OzuNegotiatorV6(SAOCallNegotiator):
 
     def _bid(self, state: SAOState) -> Outcome | None:
         """
-        Phase 1 (t < 0.40):      all acceptable + decoy, uniform random
-                                  Maximum Concealing — opponent sees full chaos.
+        Phase 1 (t < 0.40):   all acceptable + decoy, uniform random
+                               Maximum Concealing — opponent sees full chaos.
 
-        Phase 2 (0.40-0.75):     top 40% + decoy, uniform random
-                                  Moderate Concealing, tighter utility floor.
+        Phase 2 (0.40-0.75):  top 40% + decoy, uniform random
+                               Moderate Concealing, tighter utility floor.
 
-        Phase 3a (0.75-0.90):    rotate through top 5 outcomes, no decoy
-                                  Some bid diversity, but all bids near our max.
-                                  Decoy is dropped to avoid artificially
-                                  shrinking an already small high-utility pool.
+        Phase 3a (0.75-0.90): top 5 outcomes, NO decoy.
+                               Re-ordered by estimated opponent utility so we
+                               offer the bid the opponent is most likely to
+                               accept — while staying within our high floor.
+                               Uses opponent model for the first time.
 
-        Phase 3b (t >= 0.90):    always bid our single best available outcome
-                                  Pure Advantage maximization. The opponent's
-                                  frequency model is already built — deception
-                                  yields diminishing returns at this stage.
+        Phase 3b (t >= 0.90): top 3 outcomes, pick by opponent utility.
+                               Pure Advantage + agreement rate maximization.
+                               All bids are near our max utility. We pick the
+                               one the opponent wants most → fastest acceptance
+                               at our best possible terms.
+
+        The opponent model is now actually used in phases 3a and 3b.
+        Previously it was computed every round but never read (v6 bug).
         """
         if not self.rational_outcomes:
             return None
@@ -260,13 +265,36 @@ class OzuNegotiatorV6(SAOCallNegotiator):
             return random.choice(pool)
 
         if t < 0.90:
+            # Phase 3a: pick from top 5 by our utility, prefer what opponent values
             top = acceptable[:min(5, len(acceptable))]
-            bid = top[self._phase3_idx % len(top)]
-            self._phase3_idx += 1
-            return bid
+            return self._best_for_opponent(top)
 
-        # Phase 3b: maximum Advantage — always bid our best
-        return acceptable[0]
+        # Phase 3b: pick from top 3 by our utility, prefer what opponent values
+        top = acceptable[:min(3, len(acceptable))]
+        return self._best_for_opponent(top)
+
+    def _best_for_opponent(self, candidates: list) -> Outcome | None:
+        """
+        Among candidates (all already above our utility floor), return the one
+        the opponent values most according to our frequency model.
+
+        This is the correct way to use the opponent model in bidding:
+        - We never lower our utility floor to please the opponent
+        - We only choose WHICH bid to make at our current floor
+        - The opponent is more likely to accept a bid that is good for them
+        - Result: faster agreements at OUR utility level → higher Advantage
+
+        Falls back to the first candidate (our best) if model is not warm yet.
+        """
+        if not candidates:
+            return None
+        opp = self.opponent_ufun
+        if opp is None or self._opp_n < 3:
+            return candidates[0]  # not enough data — just bid our best
+        try:
+            return max(candidates, key=lambda o: float(opp(o)))
+        except Exception:
+            return candidates[0]
 
     def _middle_offer(self, opponent_offer: Outcome) -> Outcome | None:
         """
