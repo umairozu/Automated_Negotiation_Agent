@@ -1,0 +1,2 @@
+time,relative_time,step,negotiator,offer,responses,state,text,data,OzuNegotiator,MAPNeg
+0.0,0.009900990099009901,0,OzuNegotiator,"('Macintosh', '80 Gb', ""19'' LCD"")",{'OzuNegotiator': <ResponseType.ACCEPT_OFFER: 0>},agreement,,,0.5775524426410947,1.0

@@ -1,11 +1,11 @@
-"""Tests for the MyNegotiator agent."""
+"""Tests for the OzuNegotiator agent."""
 
 import pytest
 from negmas.inout import Scenario
 from negmas.preferences.generators import generate_multi_issue_ufuns
 from negmas.sao import SAOMechanism
 
-from mynegotiator import MyNegotiator
+from ozu_negotiator import OzuNegotiator
 
 
 @pytest.fixture
@@ -20,29 +20,22 @@ def test_scenario():
     return Scenario(outcome_space=ufuns[0].outcome_space, ufuns=ufuns)
 
 
-class TestMyNegotiator:
-    """Tests for the MyNegotiator agent."""
+class TestOzuNegotiator:
+    """Tests for the OzuNegotiator agent."""
 
     def test_instantiation(self):
-        """Test that MyNegotiator can be instantiated."""
-        negotiator = MyNegotiator()
+        """Test that OzuNegotiator can be instantiated."""
+        negotiator = OzuNegotiator()
         assert negotiator is not None
 
-    def test_inherits_from_boaneg(self):
-        """Test that MyNegotiator inherits from BOANeg."""
-        from examples.boa import BOANeg
-
-        negotiator = MyNegotiator()
-        assert isinstance(negotiator, BOANeg)
-
-    def test_has_required_components(self, test_scenario):
-        """Test that MyNegotiator has all required BOA components after initialization."""
+    def test_initializes_required_state(self, test_scenario):
+        """Test that OzuNegotiator initializes its custom state."""
         mechanism = SAOMechanism(
             outcome_space=test_scenario.outcome_space,
             n_steps=5,
         )
-        negotiator = MyNegotiator()
-        opponent = MyNegotiator()
+        negotiator = OzuNegotiator()
+        opponent = OzuNegotiator()
 
         mechanism.add(negotiator, ufun=test_scenario.ufuns[0])
         mechanism.add(opponent, ufun=test_scenario.ufuns[1])
@@ -50,19 +43,17 @@ class TestMyNegotiator:
         # Run one step to initialize
         mechanism.step()
 
-        # Check that it has the three main BOA components inherited from BOANeg
-        assert negotiator._acceptance is not None
-        assert negotiator._offering is not None
-        assert negotiator._models is not None
+        assert negotiator.rational_outcomes
+        assert negotiator.opponent_ufun is not None
 
     def test_negotiation_completes(self, test_scenario):
-        """Test that MyNegotiator can complete a negotiation."""
+        """Test that OzuNegotiator can complete a negotiation."""
         mechanism = SAOMechanism(
             outcome_space=test_scenario.outcome_space,
             n_steps=50,
         )
-        negotiator1 = MyNegotiator()
-        negotiator2 = MyNegotiator()
+        negotiator1 = OzuNegotiator()
+        negotiator2 = OzuNegotiator()
 
         mechanism.add(negotiator1, ufun=test_scenario.ufuns[0])
         mechanism.add(negotiator2, ufun=test_scenario.ufuns[1])
@@ -71,13 +62,13 @@ class TestMyNegotiator:
         assert mechanism.state.agreement is not None or mechanism.state.timedout
 
     def test_makes_offers(self, test_scenario):
-        """Test that MyNegotiator makes valid offers."""
+        """Test that OzuNegotiator makes valid offers."""
         mechanism = SAOMechanism(
             outcome_space=test_scenario.outcome_space,
             n_steps=10,
         )
-        negotiator = MyNegotiator()
-        opponent = MyNegotiator()
+        negotiator = OzuNegotiator()
+        opponent = OzuNegotiator()
 
         mechanism.add(negotiator, ufun=test_scenario.ufuns[0])
         mechanism.add(opponent, ufun=test_scenario.ufuns[1])
@@ -88,7 +79,7 @@ class TestMyNegotiator:
         assert len(mechanism.history) > 0
 
     def test_negotiation_with_different_opponents(self, test_scenario):
-        """Test that MyNegotiator can negotiate with different types of opponents."""
+        """Test that OzuNegotiator can negotiate with different types of opponents."""
         from examples.simple import SimpleNegotiator
         from examples.map import MAPNeg
 
@@ -97,7 +88,7 @@ class TestMyNegotiator:
             outcome_space=test_scenario.outcome_space,
             n_steps=50,
         )
-        negotiator1 = MyNegotiator()
+        negotiator1 = OzuNegotiator()
         opponent1 = SimpleNegotiator()
 
         mechanism1.add(negotiator1, ufun=test_scenario.ufuns[0])
@@ -111,7 +102,7 @@ class TestMyNegotiator:
             outcome_space=test_scenario.outcome_space,
             n_steps=50,
         )
-        negotiator2 = MyNegotiator()
+        negotiator2 = OzuNegotiator()
         opponent2 = MAPNeg()
 
         mechanism2.add(negotiator2, ufun=test_scenario.ufuns[0])
@@ -121,7 +112,7 @@ class TestMyNegotiator:
         assert mechanism2.state.agreement is not None or mechanism2.state.timedout
 
     def test_negotiation_on_multiple_scenarios(self, test_scenario):
-        """Test that MyNegotiator works on scenarios with different numbers of issues."""
+        """Test that OzuNegotiator works on scenarios with different numbers of issues."""
         # Test with 1 issue
         ufuns1 = generate_multi_issue_ufuns(
             n_issues=1,
@@ -135,8 +126,8 @@ class TestMyNegotiator:
             outcome_space=scenario1.outcome_space,
             n_steps=50,
         )
-        negotiator1a = MyNegotiator()
-        negotiator1b = MyNegotiator()
+        negotiator1a = OzuNegotiator()
+        negotiator1b = OzuNegotiator()
 
         mechanism1.add(negotiator1a, ufun=scenario1.ufuns[0])
         mechanism1.add(negotiator1b, ufun=scenario1.ufuns[1])
@@ -157,8 +148,8 @@ class TestMyNegotiator:
             outcome_space=scenario4.outcome_space,
             n_steps=50,
         )
-        negotiator4a = MyNegotiator()
-        negotiator4b = MyNegotiator()
+        negotiator4a = OzuNegotiator()
+        negotiator4b = OzuNegotiator()
 
         mechanism4.add(negotiator4a, ufun=scenario4.ufuns[0])
         mechanism4.add(negotiator4b, ufun=scenario4.ufuns[1])
@@ -167,13 +158,13 @@ class TestMyNegotiator:
         assert mechanism4.state.agreement is not None or mechanism4.state.timedout
 
     def test_agreement_is_valid(self, test_scenario):
-        """Test that agreements reached by MyNegotiator are valid outcomes."""
+        """Test that agreements reached by OzuNegotiator are valid outcomes."""
         mechanism = SAOMechanism(
             outcome_space=test_scenario.outcome_space,
             n_steps=50,
         )
-        negotiator1 = MyNegotiator()
-        negotiator2 = MyNegotiator()
+        negotiator1 = OzuNegotiator()
+        negotiator2 = OzuNegotiator()
 
         mechanism.add(negotiator1, ufun=test_scenario.ufuns[0])
         mechanism.add(negotiator2, ufun=test_scenario.ufuns[1])
